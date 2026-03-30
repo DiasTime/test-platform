@@ -19,7 +19,17 @@ export async function GET() {
 
 export async function DELETE(request: Request) {
   try {
-    const { questionId } = await request.json();
+    const { questionId, deleteAll } = await request.json();
+    
+    if (deleteAll) {
+      const questionsSnapshot = await adminDb.collection("questions").get();
+      const batch = adminDb.batch();
+      questionsSnapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+      return NextResponse.json({ success: true, message: "All questions deleted", count: questionsSnapshot.size });
+    }
     
     if (!questionId) {
       return NextResponse.json({ success: false, error: "Question ID required" }, { status: 400 });

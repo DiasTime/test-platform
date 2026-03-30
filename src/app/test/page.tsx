@@ -27,6 +27,8 @@ export default function TestPage() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
   const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState("");
+  const [waitingMessage, setWaitingMessage] = useState("");
 
   useEffect(() => {
     startTest();
@@ -39,6 +41,10 @@ export default function TestPage() {
 
       if (!data.success) {
         setError(data.error);
+        setErrorCode(data.errorCode || "");
+        if (data.errorCode === "NOT_STARTED") {
+          setWaitingMessage(data.error);
+        }
         return;
       }
 
@@ -130,6 +136,108 @@ export default function TestPage() {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Загрузка теста...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (errorCode === "NOT_STARTED" && waitingMessage) {
+    const timeMatch = waitingMessage.match(/(\d{2}\.\d{2}\.\d{4},?\s*\d{2}:\d{2})/);
+    const scheduledTime = timeMatch ? timeMatch[1] : "";
+    
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4">
+        <Card className="max-w-lg w-full text-center">
+          <div className="mb-6">
+            <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+              <svg className="w-10 h-10 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Здравствуйте!</h1>
+            <p className="text-slate-600 text-lg">Добро пожаловать на тестирование</p>
+          </div>
+          
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 mb-6">
+            <p className="text-slate-700 mb-3">Ваше тестирование запланировано на:</p>
+            <div className="flex items-center justify-center gap-2">
+              <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span className="text-xl font-semibold text-blue-700">{scheduledTime}</span>
+            </div>
+          </div>
+          
+          <p className="text-slate-500 text-sm mb-6">
+            Пожалуйста, вернитесь в указанное время. Страница обновится автоматически.
+          </p>
+          
+          <div className="flex gap-3 justify-center">
+            <Button variant="secondary" onClick={() => window.location.reload()}>
+              <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Обновить
+            </Button>
+            <Button variant="ghost" onClick={handleLogout}>
+              Выйти
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (errorCode === "NO_TIME_ASSIGNED") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center p-4">
+        <Card className="max-w-lg w-full text-center">
+          <div className="mb-6">
+            <div className="w-20 h-20 bg-gradient-to-br from-amber-100 to-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-10 h-10 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Здравствуйте!</h1>
+            <p className="text-slate-600 text-lg">Добро пожаловать на тестирование</p>
+          </div>
+          
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl p-6 mb-6">
+            <p className="text-slate-700">
+              Время для прохождения теста ещё не назначено. Пожалуйста, обратитесь к администратору.
+            </p>
+          </div>
+          
+          <Button variant="ghost" onClick={handleLogout}>
+            Выйти
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  if (errorCode === "EXPIRED") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-zinc-50 flex items-center justify-center p-4">
+        <Card className="max-w-lg w-full text-center">
+          <div className="mb-6">
+            <div className="w-20 h-20 bg-gradient-to-br from-slate-100 to-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-10 h-10 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Время истекло</h1>
+          </div>
+          
+          <div className="bg-gradient-to-r from-slate-50 to-gray-50 rounded-2xl p-6 mb-6">
+            <p className="text-slate-700">
+              К сожалению, время для прохождения теста истекло. Обратитесь к администратору для получения нового времени.
+            </p>
+          </div>
+          
+          <Button variant="ghost" onClick={handleLogout}>
+            Выйти
+          </Button>
+        </Card>
       </div>
     );
   }

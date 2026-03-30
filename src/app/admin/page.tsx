@@ -42,6 +42,16 @@ interface Question {
   createdAt?: number;
 }
 
+interface User {
+  id: string;
+  email: string;
+  iin: string;
+  firstName: string;
+  lastName: string;
+  testWindowStart: string | null;
+  testWindowEnd: string | null;
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"dashboard" | "questions" | "users">("dashboard");
@@ -52,6 +62,41 @@ export default function AdminPage() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [questionCount, setQuestionCount] = useState(20);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  const fetchSettings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/settings");
+      const data = await res.json();
+      if (data.success && data.settings) {
+        setQuestionCount(data.settings.questionCount || 20);
+      }
+    } catch (error) {
+      console.error("Failed to fetch settings:", error);
+    }
+  }, []);
+
+  const saveQuestionCount = async (count: number) => {
+    setSavingSettings(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionCount: count }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setQuestionCount(data.settings.questionCount);
+      }
+    } catch (error) {
+      console.error("Failed to save settings:", error);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
 
   const fetchQuestions = useCallback(async () => {
     setLoadingQuestions(true);
@@ -67,6 +112,59 @@ export default function AdminPage() {
       setLoadingQuestions(false);
     }
   }, []);
+
+  const fetchUsers = useCallback(async () => {
+    setLoadingUsers(true);
+    try {
+      const res = await fetch("/api/admin/users");
+      const data = await res.json();
+      if (data.success) {
+        setUsers(data.users);
+      }
+    } catch (error) {
+      console.error("Failed to fetch users:", error);
+    } finally {
+      setLoadingUsers(false);
+    }
+  }, []);
+
+  const updateUserTimeWindow = async (userId: string, start: string | null, end: string | null) => {
+    try {
+      // Convert local datetime to ISO string with timezone
+      const startISO = start ? new Date(start).toISOString() : null;
+      const endISO = end ? new Date(end).toISOString() : null;
+      
+      const res = await fetch("/api/admin/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, testWindowStart: startISO, testWindowEnd: endISO }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchUsers();
+      }
+    } catch (error) {
+      console.error("Failed to update user:", error);
+    }
+  };
+
+  const deleteUser = async (userId: string) => {
+    if (!confirm("Удалить этого пользователя?")) return;
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUsers(users.filter(u => u.id !== userId));
+        fetchStats();
+      }
+    } catch (error) {
+      console.error("Failed to delete user:", error);
+    }
+  };
 
   useEffect(() => {
     fetch("/api/admin/cleanup", { method: "POST" }).catch(() => {});
@@ -84,12 +182,14 @@ export default function AdminPage() {
 
     fetchStats();
     fetchQuestions();
+    fetchSettings();
+    fetchUsers();
 
     return () => {
       off(activeRef);
       off(completedRef);
     };
-  }, [fetchQuestions]);
+  }, [fetchQuestions, fetchSettings, fetchUsers]);
 
   const fetchStats = async () => {
     try {
@@ -143,6 +243,26 @@ export default function AdminPage() {
       }
     } catch (error) {
       console.error("Failed to delete question:", error);
+    }
+  };
+
+  const handleDeleteAllQuestions = async () => {
+    if (!confirm(`Удалить ВСЕ ${questions.length} вопросов? Это действие нельзя отменить!`)) return;
+    
+    try {
+      const res = await fetch("/api/admin/questions", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deleteAll: true }),
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        setQuestions([]);
+        fetchStats();
+      }
+    } catch (error) {
+      console.error("Failed to delete all questions:", error);
     }
   };
 
@@ -399,6 +519,31 @@ export default function AdminPage() {
             </div>
 
             <Card>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-slate-900">Настройки теста</h2>
+              </div>
+              <div className="flex items-center gap-4">
+                <label className="text-sm text-slate-600">Количество вопросов в тесте:</label>
+                <select
+                  value={questionCount}
+                  onChange={(e) => saveQuestionCount(Number(e.target.value))}
+                  disabled={savingSettings}
+                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  {[5, 10, 15, 20, 25, 30, 40, 50, 75, 100].map((n) => (
+                    <option key={n} value={n}>{n} вопросов</option>
+                  ))}
+                </select>
+                {savingSettings && (
+                  <span className="text-sm text-slate-400">Сохранение...</span>
+                )}
+                <span className="text-xs text-slate-400">
+                  (доступно: {stats.totalQuestions})
+                </span>
+              </div>
+            </Card>
+
+            <Card>
               <div className="flex items-center gap-3 mb-5">
                 <span className="relative flex h-3 w-3">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -528,18 +673,32 @@ export default function AdminPage() {
                 onUpload={handleQuestionsUpload}
                 accept=".docx,.doc"
                 label="Загрузите файл с вопросами"
-                description="Формат: номер вопроса, текст, варианты A-D с отметкой правильного (*)"
+                description="Поддерживается 2 формата: нумерованный (1.1, 1.1.1) или буквенный (A, B, C, D)"
               />
               <details className="mt-5">
-                <summary className="cursor-pointer text-sm text-slate-500 hover:text-slate-700">Показать пример формата</summary>
-                <div className="mt-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                  <pre className="text-sm text-slate-600 whitespace-pre-wrap font-mono bg-white p-3 rounded-lg border border-slate-200">
-{`1. Какой язык программирования используется в Next.js?
+                <summary className="cursor-pointer text-sm text-slate-500 hover:text-slate-700">Показать примеры форматов</summary>
+                <div className="mt-3 space-y-4">
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <h4 className="font-medium text-slate-700 mb-2 text-sm">Формат 1: Нумерованный (последний вариант — правильный)</h4>
+                    <pre className="text-sm text-slate-600 whitespace-pre-wrap font-mono bg-white p-3 rounded-lg border border-slate-200">
+{`1. Раздел Правовые основы
+1.1 Объектами технического регулирования являются
+1.1.1 Вариант продукция
+1.1.2 Вариант услуга
+1.1.3 Вариант процессы
+1.1.4 Вариант: продукция; услуги; процессы.`}
+                    </pre>
+                  </div>
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <h4 className="font-medium text-slate-700 mb-2 text-sm">Формат 2: Буквенный (* — правильный ответ)</h4>
+                    <pre className="text-sm text-slate-600 whitespace-pre-wrap font-mono bg-white p-3 rounded-lg border border-slate-200">
+{`1. Какой язык используется в Next.js?
 A) Python
 B) JavaScript *
 C) Ruby
 D) PHP`}
-                  </pre>
+                    </pre>
+                  </div>
                 </div>
               </details>
             </Card>
@@ -550,12 +709,22 @@ D) PHP`}
                   Загруженные вопросы
                   <span className="ml-2 text-sm font-normal text-slate-500">({questions.length})</span>
                 </h2>
-                <Button variant="ghost" size="sm" onClick={fetchQuestions} disabled={loadingQuestions}>
-                  <svg className={`w-4 h-4 mr-1.5 ${loadingQuestions ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Обновить
-                </Button>
+                <div className="flex items-center gap-2">
+                  {questions.length > 0 && (
+                    <Button variant="ghost" size="sm" onClick={handleDeleteAllQuestions} className="text-red-600 hover:text-red-700 hover:bg-red-50">
+                      <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Удалить все
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={fetchQuestions} disabled={loadingQuestions}>
+                    <svg className={`w-4 h-4 mr-1.5 ${loadingQuestions ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Обновить
+                  </Button>
+                </div>
               </div>
 
               {loadingQuestions ? (
@@ -645,6 +814,110 @@ user2@example.com, 234567890123, Петр, Петров
 user3@example.com, 345678901234, Мария, Сидорова`}
                 </pre>
               </div>
+            </Card>
+
+            <Card>
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Пользователи
+                  <span className="ml-2 text-sm font-normal text-slate-500">({users.length})</span>
+                </h2>
+                <Button variant="ghost" size="sm" onClick={fetchUsers} disabled={loadingUsers}>
+                  <svg className={`w-4 h-4 mr-1.5 ${loadingUsers ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Обновить
+                </Button>
+              </div>
+              {users.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
+                    <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-slate-500 font-medium">Нет пользователей</p>
+                  <p className="text-slate-400 text-sm mt-1">Импортируйте пользователей из файла Word</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+                  {users.map((user) => {
+                    const now = new Date();
+                    const start = user.testWindowStart ? new Date(user.testWindowStart) : null;
+                    const end = user.testWindowEnd ? new Date(user.testWindowEnd) : null;
+                    const hasWindow = start || end;
+                    const isActive = hasWindow && (!start || now >= start) && (!end || now <= end);
+                    const isExpired = end && now > end;
+                    const isPending = start && now < start;
+                    
+                    return (
+                      <div key={user.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-slate-200 transition-colors">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-medium text-slate-900">{user.firstName} {user.lastName}</p>
+                              {!hasWindow && (
+                                <span className="px-2 py-0.5 bg-slate-200 text-slate-600 text-xs rounded-full">Не назначено</span>
+                              )}
+                              {isActive && (
+                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full">Активно</span>
+                              )}
+                              {isPending && (
+                                <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full">Ожидание</span>
+                              )}
+                              {isExpired && (
+                                <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">Истекло</span>
+                              )}
+                            </div>
+                            <p className="text-sm text-slate-500">{user.email}</p>
+                            <p className="text-xs text-slate-400">ИИН: {user.iin}</p>
+                            
+                            <div className="mt-3 flex flex-wrap items-center gap-3">
+                              <div className="flex items-center gap-2">
+                                <label className="text-xs text-slate-500">Начало:</label>
+                                <input
+                                  type="datetime-local"
+                                  value={user.testWindowStart ? new Date(user.testWindowStart).toLocaleString('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(' ', 'T') : ""}
+                                  min={new Date().toLocaleString('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(' ', 'T')}
+                                  onChange={(e) => updateUserTimeWindow(user.id, e.target.value || null, user.testWindowEnd ? new Date(user.testWindowEnd).toLocaleString('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(' ', 'T') : null)}
+                                  className="px-2 py-1 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <label className="text-xs text-slate-500">Конец:</label>
+                                <input
+                                  type="datetime-local"
+                                  value={user.testWindowEnd ? new Date(user.testWindowEnd).toLocaleString('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(' ', 'T') : ""}
+                                  min={user.testWindowStart ? new Date(user.testWindowStart).toLocaleString('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(' ', 'T') : new Date().toLocaleString('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(' ', 'T')}
+                                  onChange={(e) => updateUserTimeWindow(user.id, user.testWindowStart ? new Date(user.testWindowStart).toLocaleString('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(' ', 'T') : null, e.target.value || null)}
+                                  className="px-2 py-1 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </div>
+                              {hasWindow && (
+                                <button
+                                  onClick={() => updateUserTimeWindow(user.id, null, null)}
+                                  className="text-xs text-slate-400 hover:text-red-500"
+                                >
+                                  Сбросить
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => deleteUser(user.id)}
+                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                            title="Удалить пользователя"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </Card>
           </div>
         )}

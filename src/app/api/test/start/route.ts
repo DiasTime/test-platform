@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { adminDb, adminRealtimeDb } from "@/lib/firebase-admin";
 
-const QUESTIONS_PER_TEST = 20;
+const DEFAULT_QUESTIONS = 20;
+const MIN_QUESTIONS = 5;
 
 export async function POST() {
   try {
@@ -10,6 +11,46 @@ export async function POST() {
     if (!session) {
       return NextResponse.json({ success: false, error: "Не авторизован" }, { status: 401 });
     }
+
+    // Check user's test time window
+    const userDoc = await adminDb.collection("users").doc(session.id).get();
+    if (userDoc.exists) {
+      const userData = userDoc.data();
+      const now = new Date();
+      
+      const testWindowStart = userData?.testWindowStart?.toDate?.();
+      const testWindowEnd = userData?.testWindowEnd?.toDate?.();
+      
+      if (testWindowStart && now < testWindowStart) {
+        const startFormatted = testWindowStart.toLocaleString("ru-RU");
+        return NextResponse.json({ 
+          success: false, 
+          error: `Тестирование откроется ${startFormatted}`,
+          errorCode: "NOT_STARTED"
+        }, { status: 403 });
+      }
+      
+      if (testWindowEnd && now > testWindowEnd) {
+        return NextResponse.json({ 
+          success: false, 
+          error: "Время для прохождения теста истекло",
+          errorCode: "EXPIRED"
+        }, { status: 403 });
+      }
+      
+      if (!testWindowStart && !testWindowEnd) {
+        return NextResponse.json({ 
+          success: false, 
+          error: "Вам ещё не назначено время для прохождения теста. Обратитесь к администратору.",
+          errorCode: "NO_TIME_ASSIGNED"
+        }, { status: 403 });
+      }
+    }
+
+    // Get question count from admin settings
+    const settingsSnapshot = await adminRealtimeDb.ref("settings/questionCount").once("value");
+    let questionCount = settingsSnapshot.val() || DEFAULT_QUESTIONS;
+    questionCount = Math.max(MIN_QUESTIONS, questionCount);
 
     const activeTest = await adminDb
       .collection("tests")
@@ -28,7 +69,7 @@ export async function POST() {
         userName: `${session.firstName} ${session.lastName}`,
         startedAt: testData.startedAt?.toMillis?.() || Date.now(),
         answeredCount: Object.keys(testData.answers || {}).length,
-        totalQuestions: testData.totalQuestions || QUESTIONS_PER_TEST,
+        totalQuestions: testData.totalQuestions || DEFAULT_QUESTIONS,
         status: "in_progress",
       });
       
@@ -51,15 +92,17 @@ export async function POST() {
       };
     });
 
-    if (allQuestions.length < QUESTIONS_PER_TEST) {
+    const actualQuestionCount = Math.min(questionCount, allQuestions.length);
+
+    if (allQuestions.length < MIN_QUESTIONS) {
       return NextResponse.json(
-        { success: false, error: `Недостаточно вопросов в базе. Нужно минимум ${QUESTIONS_PER_TEST}` },
+        { success: false, error: `Недостаточно вопросов в базе. Нужно минимум ${MIN_QUESTIONS}` },
         { status: 400 }
       );
     }
 
     const shuffled = allQuestions.sort(() => Math.random() - 0.5);
-    const selectedQuestions = shuffled.slice(0, QUESTIONS_PER_TEST);
+    const selectedQuestions = shuffled.slice(0, actualQuestionCount);
 
     const testQuestions = selectedQuestions.map((q) => ({
       questionId: q.id,
@@ -73,7 +116,7 @@ export async function POST() {
       userName: `${session.firstName} ${session.lastName}`,
       questions: testQuestions,
       answers: {},
-      totalQuestions: QUESTIONS_PER_TEST,
+      totalQuestions: actualQuestionCount,
       startedAt: new Date(),
       status: "in_progress",
     });
@@ -84,7 +127,7 @@ export async function POST() {
       userName: `${session.firstName} ${session.lastName}`,
       startedAt: Date.now(),
       answeredCount: 0,
-      totalQuestions: QUESTIONS_PER_TEST,
+      totalQuestions: actualQuestionCount,
       status: "in_progress",
     });
 
