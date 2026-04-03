@@ -242,6 +242,33 @@ export default function TestPage() {
     );
   }
 
+  if (errorCode === "ALREADY_COMPLETED") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 flex items-center justify-center p-4">
+        <Card className="max-w-lg w-full text-center">
+          <div className="mb-6">
+            <div className="w-20 h-20 bg-gradient-to-br from-green-100 to-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-10 h-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Тестирование пройдено</h1>
+          </div>
+          
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl p-6 mb-6">
+            <p className="text-slate-700">
+              Вы уже прошли тестирование. Повторное прохождение невозможно. Результаты тестирования вам сообщит администратор.
+            </p>
+          </div>
+          
+          <Button variant="ghost" onClick={handleLogout}>
+            Выйти
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -261,26 +288,19 @@ export default function TestPage() {
 
   if (result) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
         <Card className="max-w-md w-full text-center">
           <div className="mb-6">
-            <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-4 ${
-              result.percentage >= 70 ? "bg-green-100" : "bg-red-100"
-            }`}>
-              <span className={`text-3xl font-bold ${
-                result.percentage >= 70 ? "text-green-600" : "text-red-600"
-              }`}>
-                {result.percentage}%
-              </span>
+            <div className="w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-4 bg-green-100">
+              <svg className="w-12 h-12 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900">Тест завершен!</h2>
+            <h2 className="text-2xl font-bold text-gray-900">Тестирование окончено!</h2>
           </div>
-          <div className="space-y-2 mb-6">
-            <p className="text-gray-600">
-              Правильных ответов: <span className="font-semibold">{result.score}</span> из <span className="font-semibold">{result.totalQuestions}</span>
-            </p>
-            <p className={`text-lg font-medium ${result.percentage >= 70 ? "text-green-600" : "text-red-600"}`}>
-              {result.percentage >= 70 ? "Тест пройден успешно!" : "Тест не пройден"}
+          <div className="bg-blue-50 rounded-xl p-4 mb-6">
+            <p className="text-gray-700">
+              Спасибо за прохождение теста. Результаты тестирования вам сообшит администратор.
             </p>
           </div>
           <Button onClick={handleLogout} className="w-full">

@@ -52,6 +52,22 @@ export async function POST() {
     let questionCount = settingsSnapshot.val() || DEFAULT_QUESTIONS;
     questionCount = Math.max(MIN_QUESTIONS, questionCount);
 
+    // Check if user already completed a test
+    const completedTest = await adminDb
+      .collection("tests")
+      .where("userId", "==", session.id)
+      .where("status", "==", "completed")
+      .limit(1)
+      .get();
+
+    if (!completedTest.empty) {
+      return NextResponse.json({ 
+        success: false, 
+        error: "Вы уже прошли тестирование. Повторное прохождение невозможно.",
+        errorCode: "ALREADY_COMPLETED"
+      }, { status: 403 });
+    }
+
     const activeTest = await adminDb
       .collection("tests")
       .where("userId", "==", session.id)
