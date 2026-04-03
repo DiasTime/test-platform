@@ -34,6 +34,31 @@ export default function TestPage() {
     startTest();
   }, []);
 
+  useEffect(() => {
+    if (!testId || questions.length === 0) return;
+
+    const sendHeartbeat = async () => {
+      try {
+        await fetch("/api/test/heartbeat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            testId,
+            currentQuestionIndex: currentIndex,
+            totalQuestions: questions.length,
+          }),
+        });
+      } catch (error) {
+        console.error("Heartbeat failed:", error);
+      }
+    };
+
+    sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 5000);
+
+    return () => clearInterval(interval);
+  }, [testId, currentIndex, questions.length]);
+
   const startTest = async () => {
     try {
       const res = await fetch("/api/test/start", { method: "POST" });

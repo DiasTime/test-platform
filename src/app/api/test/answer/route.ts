@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
     await adminRealtimeDb.ref(`activeTests/${testId}`).update({
       answeredCount: Object.keys(answers).length,
       lastAnswerAt: Date.now(),
+      lastAnsweredQuestion: questionId,
     });
 
     return NextResponse.json({ success: true, answeredCount: Object.keys(answers).length });

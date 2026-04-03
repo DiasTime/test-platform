@@ -78,15 +78,19 @@ export async function POST() {
     if (!activeTest.empty) {
       const existingTest = activeTest.docs[0];
       const testData = existingTest.data();
+      const answeredCount = Object.keys(testData.answers || {}).length;
       
       await adminRealtimeDb.ref(`activeTests/${existingTest.id}`).set({
         userId: session.id,
         userEmail: session.email,
         userName: `${session.firstName} ${session.lastName}`,
         startedAt: testData.startedAt?.toMillis?.() || Date.now(),
-        answeredCount: Object.keys(testData.answers || {}).length,
+        answeredCount,
         totalQuestions: testData.totalQuestions || DEFAULT_QUESTIONS,
         status: "in_progress",
+        currentQuestionIndex: answeredCount,
+        lastActivity: Date.now(),
+        isOnline: true,
       });
       
       return NextResponse.json({
@@ -145,6 +149,9 @@ export async function POST() {
       answeredCount: 0,
       totalQuestions: actualQuestionCount,
       status: "in_progress",
+      currentQuestionIndex: 0,
+      lastActivity: Date.now(),
+      isOnline: true,
     });
 
     return NextResponse.json({

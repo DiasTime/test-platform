@@ -16,6 +16,10 @@ interface ActiveTest {
   answeredCount: number;
   totalQuestions: number;
   status: string;
+  currentQuestionIndex?: number;
+  lastActivity?: number;
+  lastAnswerAt?: number;
+  isOnline?: boolean;
 }
 
 interface CompletedTest {
@@ -166,6 +170,8 @@ export default function AdminPage() {
     }
   };
 
+  const [, setTick] = useState(0);
+
   useEffect(() => {
     fetch("/api/admin/cleanup", { method: "POST" }).catch(() => {});
 
@@ -185,9 +191,12 @@ export default function AdminPage() {
     fetchSettings();
     fetchUsers();
 
+    const tickInterval = setInterval(() => setTick(t => t + 1), 5000);
+
     return () => {
       off(activeRef);
       off(completedRef);
+      clearInterval(tickInterval);
     };
   }, [fetchQuestions, fetchSettings, fetchUsers]);
 
@@ -266,6 +275,29 @@ export default function AdminPage() {
     }
   };
 
+  const handleResetTest = async (userId: string, userName: string) => {
+    if (!confirm(`Дать второй шанс пользователю ${userName}? Все его предыдущие результаты будут удалены.`)) return;
+    
+    try {
+      const res = await fetch("/api/admin/reset-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        setImportResult({ type: "success", message: data.message });
+        fetchStats();
+      } else {
+        setImportResult({ type: "error", message: data.error });
+      }
+    } catch (error) {
+      console.error("Failed to reset test:", error);
+      setImportResult({ type: "error", message: "Ошибка сброса теста" });
+    }
+  };
+
   const handleExport = async (format: "csv" | "json") => {
     setExporting(true);
     try {
@@ -327,7 +359,9 @@ export default function AdminPage() {
     return new Date(timestamp).toLocaleString("ru-RU");
   };
 
-  const activeTestsList = Object.entries(activeTests);
+  const activeTestsList = Object.entries(activeTests).filter(
+    ([, test]) => test.userName && test.totalQuestions > 0
+  );
   const completedTestsList = Object.entries(completedTests).sort(
     ([, a], [, b]) => b.completedAt - a.completedAt
   );
@@ -567,34 +601,65 @@ export default function AdminPage() {
                     <thead>
                       <tr className="border-b border-slate-100">
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Пользователь</th>
-                        <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Email</th>
+                        <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Статус</th>
+                        <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Текущий вопрос</th>
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Прогресс</th>
-                        <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Начат</th>
+                        <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Активность</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {activeTestsList.map(([id, test]) => (
-                        <tr key={id} className="hover:bg-slate-50 transition-colors">
-                          <td className="py-3 px-4 text-sm font-medium text-slate-900">{test.userName}</td>
-                          <td className="py-3 px-4 text-sm text-slate-600">{test.userEmail}</td>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-24 bg-slate-200 rounded-full h-1.5">
-                                <div
-                                  className="bg-blue-600 h-1.5 rounded-full transition-all"
-                                  style={{ width: `${(test.answeredCount / test.totalQuestions) * 100}%` }}
-                                ></div>
+                      {activeTestsList.map(([id, test]) => {
+                        const isOnline = test.lastActivity && (Date.now() - test.lastActivity) < 15000;
+                        const lastActivityAgo = test.lastActivity ? Math.floor((Date.now() - test.lastActivity) / 1000) : null;
+                        return (
+                          <tr key={id} className="hover:bg-slate-50 transition-colors">
+                            <td className="py-3 px-4">
+                              <div className="text-sm font-medium text-slate-900">{test.userName}</div>
+                              <div className="text-xs text-slate-500">{test.userEmail}</div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-2">
+                                <span className={`relative flex h-2.5 w-2.5 ${isOnline ? '' : 'opacity-50'}`}>
+                                  {isOnline && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>}
+                                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span>
+                                </span>
+                                <span className={`text-xs font-medium ${isOnline ? 'text-green-600' : 'text-slate-500'}`}>
+                                  {isOnline ? 'Онлайн' : 'Неактивен'}
+                                </span>
                               </div>
-                              <span className="text-sm font-medium text-slate-700">
-                                {test.answeredCount}/{test.totalQuestions}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-100 text-blue-700">
+                                Вопрос {(test.currentQuestionIndex ?? 0) + 1} из {test.totalQuestions}
                               </span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-sm text-slate-500">
-                            {formatTime(test.startedAt)}
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-20 bg-slate-200 rounded-full h-1.5">
+                                  <div
+                                    className="bg-blue-600 h-1.5 rounded-full transition-all"
+                                    style={{ width: `${(test.answeredCount / test.totalQuestions) * 100}%` }}
+                                  ></div>
+                                </div>
+                                <span className="text-sm font-medium text-slate-700">
+                                  {test.answeredCount}/{test.totalQuestions}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="text-xs text-slate-500">
+                                {lastActivityAgo !== null ? (
+                                  lastActivityAgo < 60 
+                                    ? `${lastActivityAgo} сек назад`
+                                    : `${Math.floor(lastActivityAgo / 60)} мин назад`
+                                ) : (
+                                  <span>Начат: {formatTime(test.startedAt)}</span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -621,7 +686,7 @@ export default function AdminPage() {
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Email</th>
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Результат</th>
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Завершен</th>
-                        <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Сертификат</th>
+                        <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Действия</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -644,16 +709,26 @@ export default function AdminPage() {
                             {formatTime(test.completedAt)}
                           </td>
                           <td className="py-3 px-4">
-                            <button
-                              onClick={() => window.open(`/api/admin/certificate?testId=${id}`, '_blank')}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-medium transition-colors"
-                              title="Скачать сертификат"
-                            >
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
-                              Сертификат
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => window.open(`/api/admin/certificate?testId=${id}`, '_blank')}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-medium transition-colors"
+                                title="Скачать сертификат"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => handleResetTest(test.userId, test.userName)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg text-xs font-medium transition-colors"
+                                title="Дать второй шанс"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
