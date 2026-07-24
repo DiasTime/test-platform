@@ -14,6 +14,16 @@ export interface ParsedUser {
   lastName: string;
 }
 
+// Correct answer in numbered formats can be flagged with a trailing *, + or ✓
+// (e.g. "1.2.4 В составе органа...*"). Strip the marker so it never leaks into
+// the option text shown to test-takers.
+function extractCorrectMarker(optionText: string): { text: string; isCorrect: boolean } {
+  const trimmed = optionText.trim();
+  const isCorrect = /[*+✓]\s*[.;)]?\s*$/.test(trimmed);
+  const text = trimmed.replace(/[*+✓]\s*([.;)]?)\s*$/, "$1").replace(/[*✓]/g, "").trim();
+  return { text, isCorrect };
+}
+
 export async function parseQuestionsFromWord(buffer: Buffer): Promise<ParsedQuestion[]> {
   // First try to parse with direct XML extraction for underline detection
   try {
@@ -113,13 +123,14 @@ function parseNumberedFormatWithUnderline(html: string): ParsedQuestion[] {
   
   let currentQuestion: { text: string; options: string[]; correctAnswer: number } | null = null;
   let questionNumberPrefix = "";
-  
+  let markerFound = false;
+
   for (const line of lines) {
     const trimmedLine = line.trim();
-    
+
     const isBold = trimmedLine.includes("___BOLD___");
     const cleanLine = trimmedLine.replace(/___BOLD___|___\/BOLD___/g, "").trim();
-    
+
     // Skip headers and section titles
     if (cleanLine.match(/^Раздел\s+/i)) continue;
     if (cleanLine.match(/^Программы тестирования/i)) continue;
@@ -128,34 +139,40 @@ function parseNumberedFormatWithUnderline(html: string): ParsedQuestion[] {
     if (cleanLine.match(/^ВНИМАНИЕ/i)) continue;
     if (cleanLine.match(/^Личностной опрос/i)) continue;
     if (cleanLine.length < 5) continue;
-    
+
     // Match question format: 1.1, 1.2, 2.1 etc (bold text with number.number pattern)
     const questionMatch = cleanLine.match(/^(\d+\.\d+)\.?\s+(.+)/);
-    
+
     // Match option format: 1.1.1, 1.1.2, 1.2.1.1, etc.
     const optionMatch = cleanLine.match(/^(\d+\.\d+\.\d+(?:\.\d+)?)\s*\.?\s*(?:Вариант:?\s*)?(.+)/i);
-    
+
     if (optionMatch) {
       const optionNumber = optionMatch[1];
       let optionText = optionMatch[2].trim();
       optionText = optionText.replace(/^Вариант:?\s*/i, "").trim();
-      
-      if (currentQuestion && optionText.length > 0) {
+      const { text: cleanOption, isCorrect } = extractCorrectMarker(optionText);
+
+      if (currentQuestion && cleanOption.length > 0) {
         const optionParts = optionNumber.split(".");
         const questionParts = questionNumberPrefix.split(".");
-        
+
         if (optionParts[0] === questionParts[0] && optionParts[1] === questionParts[1]) {
-          currentQuestion.options.push(optionText);
+          currentQuestion.options.push(cleanOption);
+          if (isCorrect) {
+            currentQuestion.correctAnswer = currentQuestion.options.length - 1;
+            markerFound = true;
+          } else if (!markerFound) {
+            currentQuestion.correctAnswer = currentQuestion.options.length - 1;
+          }
         }
       }
     } else if (questionMatch && isBold) {
       if (currentQuestion && currentQuestion.options.length >= 2) {
-        // Last option is correct answer
-        currentQuestion.correctAnswer = currentQuestion.options.length - 1;
         questions.push(currentQuestion);
       }
-      
+
       questionNumberPrefix = questionMatch[1];
+      markerFound = false;
       currentQuestion = {
         text: questionMatch[2].trim(),
         options: [],
@@ -163,13 +180,12 @@ function parseNumberedFormatWithUnderline(html: string): ParsedQuestion[] {
       };
     }
   }
-  
+
   // Don't forget the last question
   if (currentQuestion && currentQuestion.options.length >= 2) {
-    currentQuestion.correctAnswer = currentQuestion.options.length - 1;
     questions.push(currentQuestion);
   }
-  
+
   return questions;
 }
 
@@ -251,15 +267,17 @@ function parseDocxXml(xml: string): ParsedQuestion[] {
       let optionText = optionMatch[2].trim();
       optionText = optionText.replace(/^Вариант:?\s*/i, "").trim();
       
-      if (currentQuestion && optionText.length > 0) {
+      const { text: cleanOption, isCorrect: markedCorrect } = extractCorrectMarker(optionText);
+
+      if (currentQuestion && cleanOption.length > 0) {
         const optionParts = optionNumber.split(".");
         const questionParts = questionNumberPrefix.split(".");
-        
+
         if (optionParts[0] === questionParts[0] && optionParts[1] === questionParts[1]) {
-          currentQuestion.options.push(optionText);
-          
-          // If underlined, mark as correct
-          if (para.isUnderlined) {
+          currentQuestion.options.push(cleanOption);
+
+          // Correct if underlined OR flagged with a *, +, ✓ marker
+          if (para.isUnderlined || markedCorrect) {
             currentQuestion.correctAnswer = currentQuestion.options.length - 1;
           }
         }
@@ -292,40 +310,49 @@ function parseNumberedFormat(text: string): ParsedQuestion[] {
   
   let currentQuestion: { text: string; options: string[]; correctAnswer: number } | null = null;
   let questionNumberPrefix = "";
-  
+  let markerFound = false;
+
   for (const line of lines) {
     const trimmedLine = line.trim();
-    
+
     // Skip section headers (like "1. Раздел...")
     const sectionMatch = trimmedLine.match(/^(\d+)\.\s+Раздел\s+/i);
     if (sectionMatch) continue;
-    
+
     // Match question format: 1.1 or 1.2 (two numbers with dot)
     const questionMatch = trimmedLine.match(/^(\d+\.\d+)\.?\s+(.+)/);
-    
+
     // Match option format: 1.1.1, 1.1.2, 1.2.1.1, etc. (three or more numbers)
     const optionMatch = trimmedLine.match(/^(\d+\.\d+\.\d+(?:\.\d+)?)\s*\.?\s*(?:Вариант:?\s*)?(.+)/i);
-    
+
     if (optionMatch) {
       const optionNumber = optionMatch[1];
       let optionText = optionMatch[2].trim();
-      
+
       // Remove "Вариант" prefix if present
       optionText = optionText.replace(/^Вариант:?\s*/i, "").trim();
-      
+      const { text: cleanOption, isCorrect } = extractCorrectMarker(optionText);
+
       // Check if this option belongs to current question
-      if (currentQuestion && optionNumber.startsWith(questionNumberPrefix + ".")) {
-        currentQuestion.options.push(optionText);
-        // Last option is correct (will be updated as we add more options)
-        currentQuestion.correctAnswer = currentQuestion.options.length - 1;
+      if (currentQuestion && cleanOption.length > 0 && optionNumber.startsWith(questionNumberPrefix + ".")) {
+        currentQuestion.options.push(cleanOption);
+        if (isCorrect) {
+          // Explicit marker (*, +, ✓) wins over positional guess
+          currentQuestion.correctAnswer = currentQuestion.options.length - 1;
+          markerFound = true;
+        } else if (!markerFound) {
+          // No marker yet: fall back to "last option is correct"
+          currentQuestion.correctAnswer = currentQuestion.options.length - 1;
+        }
       }
     } else if (questionMatch) {
       // Save previous question if valid
       if (currentQuestion && currentQuestion.options.length >= 2) {
         questions.push(currentQuestion);
       }
-      
+
       questionNumberPrefix = questionMatch[1];
+      markerFound = false;
       currentQuestion = {
         text: questionMatch[2].trim(),
         options: [],
@@ -333,12 +360,12 @@ function parseNumberedFormat(text: string): ParsedQuestion[] {
       };
     }
   }
-  
+
   // Don't forget the last question
   if (currentQuestion && currentQuestion.options.length >= 2) {
     questions.push(currentQuestion);
   }
-  
+
   return questions;
 }
 

@@ -359,9 +359,19 @@ export default function AdminPage() {
     return new Date(timestamp).toLocaleString("ru-RU");
   };
 
-  const activeTestsList = Object.entries(activeTests).filter(
-    ([, test]) => test.userName && test.totalQuestions > 0
+  const completedUserIds = new Set(
+    Object.values(completedTests).map((t) => t.userId)
   );
+  // Show only genuinely-active tests: has data, and the user hasn't already
+  // finished. Online (recent heartbeat) sorts above inactive/abandoned ones.
+  const activeTestsList = Object.entries(activeTests)
+    .filter(
+      ([, test]) =>
+        test.userName &&
+        test.totalQuestions > 0 &&
+        !completedUserIds.has(test.userId)
+    )
+    .sort(([, a], [, b]) => (b.lastActivity || 0) - (a.lastActivity || 0));
   const completedTestsList = Object.entries(completedTests).sort(
     ([, a], [, b]) => b.completedAt - a.completedAt
   );
@@ -667,7 +677,10 @@ export default function AdminPage() {
             </Card>
 
             <Card>
-              <h2 className="text-lg font-semibold text-slate-900 mb-5">Завершенные тесты</h2>
+              <h2 className="text-lg font-semibold text-slate-900 mb-5">
+                Завершенные тесты
+                <span className="ml-2 text-sm font-normal text-slate-500">({completedTestsList.length})</span>
+              </h2>
               {completedTestsList.length === 0 ? (
                 <div className="text-center py-8">
                   <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
@@ -678,9 +691,9 @@ export default function AdminPage() {
                   <p className="text-slate-500">Нет завершенных тестов</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto max-h-[600px] overflow-y-auto rounded-lg border border-slate-100">
                   <table className="w-full">
-                    <thead>
+                    <thead className="sticky top-0 z-10 bg-white">
                       <tr className="border-b border-slate-100">
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Пользователь</th>
                         <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Email</th>
@@ -690,7 +703,7 @@ export default function AdminPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {completedTestsList.slice(0, 20).map(([id, test]) => (
+                      {completedTestsList.map(([id, test]) => (
                         <tr key={id} className="hover:bg-slate-50 transition-colors">
                           <td className="py-3 px-4 text-sm font-medium text-slate-900">{test.userName}</td>
                           <td className="py-3 px-4 text-sm text-slate-600">{test.userEmail}</td>

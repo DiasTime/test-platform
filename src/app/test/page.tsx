@@ -35,7 +35,9 @@ export default function TestPage() {
   }, []);
 
   useEffect(() => {
-    if (!testId || questions.length === 0) return;
+    // Stop heartbeats once the test is submitted, otherwise they keep
+    // re-creating a phantom activeTests entry after completion.
+    if (!testId || questions.length === 0 || result) return;
 
     const sendHeartbeat = async () => {
       try {
@@ -57,7 +59,7 @@ export default function TestPage() {
     const interval = setInterval(sendHeartbeat, 5000);
 
     return () => clearInterval(interval);
-  }, [testId, currentIndex, questions.length]);
+  }, [testId, currentIndex, questions.length, result]);
 
   const startTest = async () => {
     try {
