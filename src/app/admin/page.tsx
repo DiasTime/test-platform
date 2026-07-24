@@ -5,8 +5,6 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { FileUpload } from "@/components/ui/FileUpload";
-import { ref, onValue, off } from "firebase/database";
-import { realtimeDb } from "@/lib/firebase";
 
 interface ActiveTest {
   userId: string;
@@ -175,27 +173,32 @@ export default function AdminPage() {
   useEffect(() => {
     fetch("/api/admin/cleanup", { method: "POST" }).catch(() => {});
 
-    const activeRef = ref(realtimeDb, "activeTests");
-    const completedRef = ref(realtimeDb, "completedTests");
+    // Poll live test state from the server (admin SDK) instead of reading the
+    // Realtime Database directly — the client isn't Firebase-authenticated.
+    const loadLiveTests = async () => {
+      try {
+        const res = await fetch("/api/admin/active-tests");
+        const data = await res.json();
+        if (data.success) {
+          setActiveTests(data.activeTests || {});
+          setCompletedTests(data.completedTests || {});
+        }
+      } catch (error) {
+        console.error("Failed to load live tests:", error);
+      }
+    };
 
-    onValue(activeRef, (snapshot) => {
-      setActiveTests(snapshot.val() || {});
-    });
-
-    onValue(completedRef, (snapshot) => {
-      setCompletedTests(snapshot.val() || {});
-    });
-
+    loadLiveTests();
     fetchStats();
     fetchQuestions();
     fetchSettings();
     fetchUsers();
 
+    const pollInterval = setInterval(loadLiveTests, 4000);
     const tickInterval = setInterval(() => setTick(t => t + 1), 5000);
 
     return () => {
-      off(activeRef);
-      off(completedRef);
+      clearInterval(pollInterval);
       clearInterval(tickInterval);
     };
   }, [fetchQuestions, fetchSettings, fetchUsers]);
@@ -856,7 +859,7 @@ D) PHP`}
                                 }`}
                               >
                                 <span className="font-semibold mr-1">{String.fromCharCode(65 + optIdx)}.</span>
-                                {option}
+                                {option.replace(/\s*[*+✓]+\s*$/, "")}
                                 {optIdx === question.correctAnswer && (
                                   <svg className="w-3 h-3 inline ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -33,7 +33,17 @@ export default function TestPage() {
 
   useEffect(() => {
     startTest();
-  }, []);
+  }, [startTest]);
+
+  // Auto-retry while the test window hasn't opened yet, so the waiting screen
+  // lets the user in the moment their scheduled time arrives (no manual reload).
+  useEffect(() => {
+    if (errorCode !== "NOT_STARTED") return;
+    const id = setInterval(() => {
+      startTest();
+    }, 15000);
+    return () => clearInterval(id);
+  }, [errorCode, startTest]);
 
   useEffect(() => {
     // Stop heartbeats once the test is submitted, otherwise they keep
@@ -62,7 +72,7 @@ export default function TestPage() {
     return () => clearInterval(interval);
   }, [testId, currentIndex, questions.length, result]);
 
-  const startTest = async () => {
+  const startTest = useCallback(async () => {
     try {
       const res = await fetch("/api/test/start", { method: "POST" });
       const data = await res.json();
@@ -77,6 +87,10 @@ export default function TestPage() {
         return;
       }
 
+      // Success: clear any prior gate state so an auto-retry transitions
+      // straight into the test instead of staying on the waiting screen.
+      setError("");
+      setErrorCode("");
       setTestId(data.testId);
       setQuestions(data.questions);
 
@@ -92,7 +106,7 @@ export default function TestPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const handleAnswer = async (answerIndex: number) => {
     if (!testId) return;
@@ -428,7 +442,7 @@ export default function TestPage() {
                   }`}>
                     {String.fromCharCode(65 + idx)}
                   </span>
-                  <span className="text-slate-800 pt-0.5">{option}</span>
+                  <span className="text-slate-800 pt-0.5">{option.replace(/\s*[*+✓]+\s*$/, "")}</span>
                 </div>
               </button>
             ))}
