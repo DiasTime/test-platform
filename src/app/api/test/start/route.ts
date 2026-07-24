@@ -13,13 +13,15 @@ export async function POST() {
     }
 
     // Check user's test time window
+    let windowEndISO: string | null = null;
     const userDoc = await adminDb.collection("users").doc(session.id).get();
     if (userDoc.exists) {
       const userData = userDoc.data();
       const now = new Date();
-      
+
       const testWindowStart = userData?.testWindowStart?.toDate?.();
       const testWindowEnd = userData?.testWindowEnd?.toDate?.();
+      windowEndISO = testWindowEnd ? testWindowEnd.toISOString() : null;
       
       if (testWindowStart && now < testWindowStart) {
         // Send the raw instant; the client formats it in the user's local
@@ -100,6 +102,7 @@ export async function POST() {
         testId: existingTest.id,
         questions: testData.questions,
         resuming: true,
+        testWindowEnd: windowEndISO,
       });
     }
 
@@ -161,6 +164,7 @@ export async function POST() {
       testId: testRef.id,
       questions: testQuestions,
       resuming: false,
+      testWindowEnd: windowEndISO,
     });
   } catch (error) {
     console.error("Start test error:", error);

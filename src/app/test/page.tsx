@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -30,6 +30,9 @@ export default function TestPage() {
   const [errorCode, setErrorCode] = useState("");
   const [waitingMessage, setWaitingMessage] = useState("");
   const [scheduledStart, setScheduledStart] = useState("");
+  const [deadline, setDeadline] = useState<number | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const submitLockRef = useRef(false);
 
   const startTest = useCallback(async () => {
     try {
@@ -52,6 +55,7 @@ export default function TestPage() {
       setErrorCode("");
       setTestId(data.testId);
       setQuestions(data.questions);
+      setDeadline(data.testWindowEnd ? new Date(data.testWindowEnd).getTime() : null);
 
       if (data.resuming) {
         const testRes = await fetch(`/api/test/${data.testId}`);
@@ -142,8 +146,10 @@ export default function TestPage() {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!testId) return;
+  const handleSubmit = useCallback(async () => {
+    // Lock so the 1s countdown can't fire a second submit before result lands.
+    if (!testId || submitLockRef.current) return;
+    submitLockRef.current = true;
     setSubmitting(true);
 
     try {
@@ -159,13 +165,33 @@ export default function TestPage() {
         setResult(data);
       } else {
         setError(data.error);
+        submitLockRef.current = false;
       }
     } catch {
       setError("Ошибка при отправке теста");
+      submitLockRef.current = false;
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [testId]);
+
+  // Time-limit enforcement: count down to the deadline and auto-submit the
+  // test the moment it's reached, even with unanswered questions.
+  useEffect(() => {
+    if (!deadline || result) return;
+
+    const tick = () => {
+      const ms = deadline - Date.now();
+      setTimeLeft(ms);
+      if (ms <= 0) {
+        handleSubmit();
+      }
+    };
+
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [deadline, result, handleSubmit]);
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -367,12 +393,34 @@ export default function TestPage() {
   const answeredCount = Object.keys(answers).length;
   const progress = (answeredCount / questions.length) * 100;
 
+  const secondsLeft = timeLeft !== null ? Math.max(0, Math.floor(timeLeft / 1000)) : null;
+  const timerText =
+    secondsLeft !== null
+      ? `${Math.floor(secondsLeft / 60)}:${(secondsLeft % 60).toString().padStart(2, "0")}`
+      : null;
+  const timerDanger = secondsLeft !== null && secondsLeft <= 60;
+
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 py-4">
           <div className="flex justify-between items-center mb-3">
-            <h1 className="text-lg font-semibold text-slate-900">Тестирование</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-lg font-semibold text-slate-900">Тестирование</h1>
+              {timerText && (
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-semibold tabular-nums ${
+                    timerDanger ? "bg-red-100 text-red-700 animate-pulse" : "bg-slate-100 text-slate-700"
+                  }`}
+                  title="Осталось времени"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {timerText}
+                </span>
+              )}
+            </div>
             <Button variant="ghost" size="sm" onClick={handleLogout}>
               <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
