@@ -31,6 +31,42 @@ export default function TestPage() {
   const [waitingMessage, setWaitingMessage] = useState("");
   const [scheduledStart, setScheduledStart] = useState("");
 
+  const startTest = useCallback(async () => {
+    try {
+      const res = await fetch("/api/test/start", { method: "POST" });
+      const data = await res.json();
+
+      if (!data.success) {
+        setError(data.error);
+        setErrorCode(data.errorCode || "");
+        if (data.errorCode === "NOT_STARTED") {
+          setWaitingMessage(data.error);
+          setScheduledStart(data.testWindowStart || "");
+        }
+        return;
+      }
+
+      // Success: clear any prior gate state so an auto-retry transitions
+      // straight into the test instead of staying on the waiting screen.
+      setError("");
+      setErrorCode("");
+      setTestId(data.testId);
+      setQuestions(data.questions);
+
+      if (data.resuming) {
+        const testRes = await fetch(`/api/test/${data.testId}`);
+        const testData = await testRes.json();
+        if (testData.success && testData.answers) {
+          setAnswers(testData.answers);
+        }
+      }
+    } catch {
+      setError("Ошибка загрузки теста");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     startTest();
   }, [startTest]);
@@ -71,42 +107,6 @@ export default function TestPage() {
 
     return () => clearInterval(interval);
   }, [testId, currentIndex, questions.length, result]);
-
-  const startTest = useCallback(async () => {
-    try {
-      const res = await fetch("/api/test/start", { method: "POST" });
-      const data = await res.json();
-
-      if (!data.success) {
-        setError(data.error);
-        setErrorCode(data.errorCode || "");
-        if (data.errorCode === "NOT_STARTED") {
-          setWaitingMessage(data.error);
-          setScheduledStart(data.testWindowStart || "");
-        }
-        return;
-      }
-
-      // Success: clear any prior gate state so an auto-retry transitions
-      // straight into the test instead of staying on the waiting screen.
-      setError("");
-      setErrorCode("");
-      setTestId(data.testId);
-      setQuestions(data.questions);
-
-      if (data.resuming) {
-        const testRes = await fetch(`/api/test/${data.testId}`);
-        const testData = await testRes.json();
-        if (testData.success && testData.answers) {
-          setAnswers(testData.answers);
-        }
-      }
-    } catch {
-      setError("Ошибка загрузки теста");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   const handleAnswer = async (answerIndex: number) => {
     if (!testId) return;
