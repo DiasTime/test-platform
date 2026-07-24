@@ -22,11 +22,13 @@ export async function POST() {
       const testWindowEnd = userData?.testWindowEnd?.toDate?.();
       
       if (testWindowStart && now < testWindowStart) {
-        const startFormatted = testWindowStart.toLocaleString("ru-RU");
-        return NextResponse.json({ 
-          success: false, 
-          error: `Тестирование откроется ${startFormatted}`,
-          errorCode: "NOT_STARTED"
+        // Send the raw instant; the client formats it in the user's local
+        // timezone (server runs in UTC, which showed the wrong hour).
+        return NextResponse.json({
+          success: false,
+          error: "Тестирование ещё не началось",
+          errorCode: "NOT_STARTED",
+          testWindowStart: testWindowStart.toISOString()
         }, { status: 403 });
       }
       

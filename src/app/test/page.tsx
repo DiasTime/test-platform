@@ -29,6 +29,7 @@ export default function TestPage() {
   const [error, setError] = useState("");
   const [errorCode, setErrorCode] = useState("");
   const [waitingMessage, setWaitingMessage] = useState("");
+  const [scheduledStart, setScheduledStart] = useState("");
 
   useEffect(() => {
     startTest();
@@ -71,6 +72,7 @@ export default function TestPage() {
         setErrorCode(data.errorCode || "");
         if (data.errorCode === "NOT_STARTED") {
           setWaitingMessage(data.error);
+          setScheduledStart(data.testWindowStart || "");
         }
         return;
       }
@@ -167,9 +169,18 @@ export default function TestPage() {
     );
   }
 
-  if (errorCode === "NOT_STARTED" && waitingMessage) {
-    const timeMatch = waitingMessage.match(/(\d{2}\.\d{2}\.\d{4},?\s*\d{2}:\d{2})/);
-    const scheduledTime = timeMatch ? timeMatch[1] : "";
+  if (errorCode === "NOT_STARTED" && (scheduledStart || waitingMessage)) {
+    // Format in the browser's local timezone so the hour matches what the
+    // admin picked (server sends the instant as ISO).
+    const scheduledTime = scheduledStart
+      ? new Date(scheduledStart).toLocaleString("ru-RU", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : waitingMessage.match(/(\d{2}\.\d{2}\.\d{4},?\s*\d{2}:\d{2})/)?.[1] ?? "";
     
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4">
