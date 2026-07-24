@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
-import { adminDb, adminRealtimeDb } from "@/lib/firebase-admin";
+import { getSession } from "@/lib/auth";
+import { adminDb } from "@/lib/firebase-admin";
 
 export async function GET(request: Request) {
   try {
+    const session = await getSession();
+    if (!session || session.role !== "admin") {
+      return NextResponse.json({ success: false, error: "Доступ запрещен" }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const testId = searchParams.get("testId");
 
@@ -10,12 +16,16 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: "Test ID required" }, { status: 400 });
     }
 
-    const completedTestsRef = adminRealtimeDb.ref(`completedTests/${testId}`);
-    const snapshot = await completedTestsRef.once("value");
-    const test = snapshot.val();
-
-    if (!test) {
+    // Read from Firestore (source of truth) so the certificate works even if
+    // the Realtime Database mirror was never written.
+    const testDoc = await adminDb.collection("tests").doc(testId).get();
+    if (!testDoc.exists) {
       return NextResponse.json({ success: false, error: "Test not found" }, { status: 404 });
+    }
+
+    const test = testDoc.data()!;
+    if (test.status !== "completed") {
+      return NextResponse.json({ success: false, error: "Тест не завершён" }, { status: 400 });
     }
 
     let userIIN = "N/A";
@@ -30,7 +40,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const completedDate = new Date(test.completedAt);
+    const completedDate = test.completedAt?.toDate?.() ?? new Date(test.completedAt ?? Date.now());
     const formattedDate = completedDate.toLocaleDateString("ru-RU", {
       day: "2-digit",
       month: "long",
