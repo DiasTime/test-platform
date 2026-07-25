@@ -20,4 +20,18 @@ const app =
 export const adminAuth = getAuth(app);
 export const adminDb = getFirestore(app);
 export const adminRealtimeDb = getDatabase(app);
+
+// Firestore surfaces the free-tier daily quota being hit as gRPC code 8
+// ("8 RESOURCE EXHAUSTED: Quota exceeded"). Routes use this to respond with a
+// meaningful 503 instead of a generic 500.
+export function isQuotaExceededError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const { code, message } = error as { code?: unknown; message?: unknown };
+  return (
+    code === 8 ||
+    code === "resource-exhausted" ||
+    (typeof message === "string" && /RESOURCE.?EXHAUSTED|Quota exceeded/i.test(message))
+  );
+}
+
 export default app;
