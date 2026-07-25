@@ -1,9 +1,42 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { adminDb, adminRealtimeDb } from "@/lib/firebase-admin";
+import { adminDb, adminRealtimeDb, isQuotaExceededError } from "@/lib/firebase-admin";
 
 const DEFAULT_QUESTIONS = 20;
 const MIN_QUESTIONS = 5;
+
+// Every test start needs the full question pool to draw a random subset from.
+// Reading the whole collection per start multiplies Firestore reads by the
+// number of participants, so the pool is cached in module memory for a short
+// TTL — a fresh import becomes visible within a minute, which is fine.
+const QUESTIONS_CACHE_TTL_MS = 60_000;
+interface PoolQuestion {
+  id: string;
+  text: string;
+  options: string[];
+  correctAnswer: number;
+}
+let questionsCache: { questions: PoolQuestion[]; fetchedAt: number } | null = null;
+
+async function getQuestionPool(): Promise<PoolQuestion[]> {
+  if (questionsCache && Date.now() - questionsCache.fetchedAt < QUESTIONS_CACHE_TTL_MS) {
+    return questionsCache.questions;
+  }
+
+  const questionsSnapshot = await adminDb.collection("questions").get();
+  const questions = questionsSnapshot.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      text: data.text as string,
+      options: data.options as string[],
+      correctAnswer: data.correctAnswer as number,
+    };
+  });
+
+  questionsCache = { questions, fetchedAt: Date.now() };
+  return questions;
+}
 
 export async function POST() {
   try {
@@ -106,16 +139,7 @@ export async function POST() {
       });
     }
 
-    const questionsSnapshot = await adminDb.collection("questions").get();
-    const allQuestions = questionsSnapshot.docs.map((doc) => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        text: data.text as string,
-        options: data.options as string[],
-        correctAnswer: data.correctAnswer as number,
-      };
-    });
+    const allQuestions = await getQuestionPool();
 
     const actualQuestionCount = Math.min(questionCount, allQuestions.length);
 
@@ -126,7 +150,8 @@ export async function POST() {
       );
     }
 
-    const shuffled = allQuestions.sort(() => Math.random() - 0.5);
+    // Copy before shuffling — the pool array is shared via the cache.
+    const shuffled = [...allQuestions].sort(() => Math.random() - 0.5);
     const selectedQuestions = shuffled.slice(0, actualQuestionCount);
 
     const testQuestions = selectedQuestions.map((q) => ({
@@ -168,6 +193,12 @@ export async function POST() {
     });
   } catch (error) {
     console.error("Start test error:", error);
+    if (isQuotaExceededError(error)) {
+      return NextResponse.json(
+        { success: false, error: "База данных перегружена: превышена дневная квота. Попробуйте позже." },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ success: false, error: "Ошибка при создании теста" }, { status: 500 });
   }
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { adminDb, adminRealtimeDb } from "@/lib/firebase-admin";
+import { adminDb, adminRealtimeDb, isQuotaExceededError } from "@/lib/firebase-admin";
 import { answerSchema } from "@/lib/validations";
 
 export async function POST(request: NextRequest) {
@@ -42,6 +42,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, answeredCount: Object.keys(answers).length });
   } catch (error) {
     console.error("Answer error:", error);
+    if (isQuotaExceededError(error)) {
+      return NextResponse.json(
+        { success: false, error: "База данных перегружена: превышена дневная квота. Попробуйте позже." },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ success: false, error: "Ошибка при сохранении ответа" }, { status: 500 });
   }
 }
