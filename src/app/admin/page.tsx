@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { FileUpload } from "@/components/ui/FileUpload";
+import { TestReviewModal } from "@/components/admin/TestReviewModal";
 
 interface ActiveTest {
   userId: string;
@@ -68,6 +69,7 @@ export default function AdminPage() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [reviewTestId, setReviewTestId] = useState<string | null>(null);
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -726,6 +728,16 @@ export default function AdminPage() {
                           </td>
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setReviewTestId(id)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 text-violet-700 hover:bg-violet-100 rounded-lg text-xs font-medium transition-colors"
+                                title="Посмотреть ответы"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                              </button>
                               <a
                                 href={`/api/admin/certificate?testId=${id}`}
                                 target="_blank"
@@ -1015,6 +1027,10 @@ user3@example.com, 345678901234, Мария, Сидорова`}
           </div>
         )}
       </div>
+
+      {reviewTestId && (
+        <TestReviewModal testId={reviewTestId} onClose={() => setReviewTestId(null)} />
+      )}
     </div>
   );
 }
