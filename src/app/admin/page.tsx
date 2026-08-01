@@ -403,7 +403,7 @@ export default function AdminPage() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
-        <div className="flex gap-2 mb-6 bg-white p-1.5 rounded-xl border border-slate-200 w-fit">
+        <div className="flex flex-wrap gap-2 mb-6 bg-white p-1.5 rounded-xl border border-slate-200 w-fit max-w-full">
           <button
             onClick={() => setActiveTab("dashboard")}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${

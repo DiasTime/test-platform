@@ -27,10 +27,12 @@ interface TestReviewModalProps {
   onClose: () => void;
 }
 
-// Правильно ли отвечен вопрос: null — определить нельзя (вопрос удалён из базы
-// или пользователь не ответил).
+// Оценка вопроса по тем же правилам, по которым считался балл при завершении
+// теста: несовпадение с правильным ответом — ошибка, отсутствие ответа тоже.
+// null означает, что оценить нельзя: вопрос удалён из базы, правильный ответ
+// неизвестен.
 function questionVerdict(q: ReviewQuestion): boolean | null {
-  if (q.correctAnswer === null || q.userAnswer === null) return null;
+  if (q.correctAnswer === null) return null;
   return q.userAnswer === q.correctAnswer;
 }
 
@@ -90,6 +92,11 @@ export function TestReviewModal({ testId, onClose }: TestReviewModalProps) {
   const correctCount = questions.filter((q) => questionVerdict(q) === true).length;
   const wrongCount = questions.filter((q) => questionVerdict(q) === false).length;
   const unknownCount = questions.length - correctCount - wrongCount;
+  const unansweredCount = questions.filter((q) => q.userAnswer === null).length;
+  // Балл зафиксирован при завершении теста. Если с тех пор вопросы правили или
+  // удаляли, пересчёт по текущей базе может с ним не сойтись — предупреждаем,
+  // чтобы расхождение в шапке не выглядело ошибкой.
+  const scoreMismatch = details !== null && correctCount !== details.score;
 
   return (
     <div
@@ -152,12 +159,25 @@ export function TestReviewModal({ testId, onClose }: TestReviewModalProps) {
                 </svg>
                 Неправильно: {wrongCount}
               </span>
+              {unansweredCount > 0 && (
+                <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                  Без ответа: {unansweredCount}
+                </span>
+              )}
               {unknownCount > 0 && (
                 <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">
                   Без оценки: {unknownCount}
                 </span>
               )}
             </div>
+          )}
+
+          {details && scoreMismatch && (
+            <p className="mt-2 text-xs text-slate-500">
+              Балл {details.score}/{details.totalQuestions} зафиксирован при завершении теста.
+              Сейчас по текущей базе вопросов правильных {correctCount} — часть вопросов была
+              изменена или удалена после прохождения.
+            </p>
           )}
         </header>
 
@@ -196,7 +216,9 @@ export function TestReviewModal({ testId, onClose }: TestReviewModalProps) {
                           verdict === true
                             ? "Правильный ответ"
                             : verdict === false
-                            ? "Неправильный ответ"
+                            ? q.userAnswer === null
+                              ? "Без ответа"
+                              : "Неправильный ответ"
                             : "Нет данных для оценки"
                         }
                         className={`w-9 h-9 rounded-lg text-sm font-medium transition-all duration-200 ${
@@ -235,7 +257,12 @@ export function TestReviewModal({ testId, onClose }: TestReviewModalProps) {
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
-                        Отвечен неправильно
+                        {currentQuestion.userAnswer === null ? "Без ответа" : "Отвечен неправильно"}
+                      </span>
+                    )}
+                    {questionVerdict(currentQuestion) === null && (
+                      <span className="inline-flex items-center px-3 py-1 bg-slate-100 text-slate-600 text-sm font-medium rounded-full">
+                        Не оценивается
                       </span>
                     )}
                   </div>
