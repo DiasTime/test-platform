@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
-// Сайт заблокирован: все запросы получают страницу «Сайт недоступен» (503).
-// Чтобы снова открыть сайт, поставьте false.
-const SITE_UNAVAILABLE = true;
+// Если true, все запросы получают страницу «Сайт недоступен» (503).
+// Чтобы снова заблокировать сайт, поставьте true.
+const SITE_UNAVAILABLE = false;
 
 const unavailableHtml = `<!DOCTYPE html>
 <html lang="ru">
